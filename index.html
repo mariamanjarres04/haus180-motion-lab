@@ -5,7 +5,16 @@
 const svgPath = "M109 20H148V128H194V20H235V274H194V166H148V274H109Z M300 20H358L399 274H359L351 228H303L295 274H260Z M327 67L308 194H347Z M417 20H457V225Q457 241 477 241Q499 241 499 222V20H536V224Q536 277 477 277Q417 277 417 224Z M617 17Q676 17 676 73V90H639V76Q639 52 619 52Q598 52 598 75Q598 99 614 115L656 156Q676 176 676 207V224Q676 277 617 277Q557 277 557 220V196H594V217Q594 241 615 241Q637 241 637 219Q637 198 618 176L578 135Q558 113 558 82Q558 17 617 17Z";
 const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d',{alpha:false}),hint=document.getElementById('hint'),final=document.getElementById('final'),restart=document.getElementById('restart'),skip=document.getElementById('skip'),announce=document.getElementById('announce');
 const path=new Path2D(svgPath),files=['01-caribe.jpg','02-torre.jpg','03-barranquilla.jpg','04-muelle.jpg','05-costa.jpg','06-final.jpg'];let photos=files.map(()=>null);
-files.forEach((file,i)=>{let img=new Image();img.onload=()=>photos[i]=img;img.onerror=()=>photos[i]=null;img.src='images/'+file});
+// Fotografías de arquitectura ilustrativas mientras se reciben las fotos locales verificadas.
+const demoPhotos=[
+'https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=1400&q=80',
+'https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?w=1400&q=80',
+'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1400&q=80',
+'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1400&q=80',
+'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1400&q=80',
+'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?w=1400&q=80'
+];
+files.forEach((file,i)=>{const load=(src,backup)=>{const img=new Image();img.onload=()=>photos[i]=img;img.onerror=()=>{if(backup)load(backup,null)};img.src=src};load('images/'+file,demoPhotos[i])});
 let w=0,h=0,dpr=1,s=1,cx=0,cy=0,state='idle',t=0,last=performance.now(),start=performance.now(),click={x:400,y:150},maxZoom=110,reverseFrom=1,mouse={x:0,y:0,hover:false,px:0,py:0},cursor={x:0,y:0};const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),ease=x=>{x=clamp(x,0,1);return x*x*x*(x*(x*6-15)+10)};
 function size(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);s=Math.min(w*(w<650?.86:.70)/580,h*.45/270);cx=w/2;cy=h/2}window.addEventListener('resize',size);size();
@@ -13,7 +22,15 @@ function transformLogo(scale=1,origin=click){ctx.translate(cx+(origin.x-400)*s*(
 function clipLogo(scale=1,origin=click){transformLogo(scale,origin);ctx.clip(path,'evenodd');ctx.setTransform(dpr,0,0,dpr,0,0)}
 function paint(i,time,zoom=1,dx=0,dy=0){let im=photos[i];ctx.save();if(im&&im.naturalWidth){let factor=Math.max(w/im.naturalWidth,h/im.naturalHeight)*zoom,iw=im.naturalWidth*factor,ih=im.naturalHeight*factor;ctx.drawImage(im,(w-iw)/2+dx,(h-ih)/2+dy,iw,ih)}else{let palettes=[['#1a4764','#d09b68'],['#27465d','#8fadb9'],['#255674','#e3aa68'],['#285777','#d5a47a'],['#175371','#dbb37c'],['#112f47','#b37d52']];let colors=palettes[i%6],g=ctx.createLinearGradient(-w*.2+Math.sin(time*.16)*w*.25,0,w,h);g.addColorStop(0,colors[0]);g.addColorStop(.55,'#3F5872');g.addColorStop(1,colors[1]);ctx.fillStyle=g;ctx.fillRect(0,0,w,h);ctx.globalAlpha=.1;for(let k=0;k<8;k++){ctx.fillStyle=k%2?'white':'#102b40';ctx.fillRect(k*w/8+Math.sin(time*.4+k)*12,0,w*.045,h)}ctx.globalAlpha=1}ctx.fillStyle='rgba(19,45,68,.12)';ctx.fillRect(0,0,w,h);ctx.restore()}
 function layer(i,time,alpha=1,z=1,dx=0,dy=0){ctx.save();ctx.globalAlpha=alpha;paint(i,time,z,dx,dy);ctx.restore()}
-function drawIdle(time){let cycle=reduced?3:5.1,hold=reduced?2.5:3.6,span=cycle-hold,k=Math.floor(time/cycle)%6,p=ease((time%cycle-hold)/span),z=1.07+.04*Math.sin(time*.35)+(mouse.hover?.07:0);layer(k,time,1,z,-cursor.x*16,-cursor.y*10);if(p>0){const next=(k+1)%6;if(k%3===0){ctx.save();ctx.beginPath();for(let j=0;j<14;j++){const q=ease((p*1.35-j*.025)/.98);ctx.rect(j*w/14,0,w/14+1,h*q)}ctx.clip();layer(next,time,1,z);ctx.restore()}else if(k%3===1){layer(next,time,p,1.45-.45*p)}else{ctx.save();ctx.beginPath();ctx.moveTo(-w,h);ctx.lineTo(w*(2*p-.2),-h);ctx.lineTo(w*(2*p+.8),-h);ctx.lineTo(w*(2*p+.2),h);ctx.closePath();ctx.clip();layer(next,time);ctx.restore()}}}
+function drawIdle(time){
+ // Ritmo visual electrónico: fotografía nueva cada 450 ms, corte suave de 90 ms.
+ const interval=reduced?2.4:.45, transition=reduced?.5:.09;
+ const phase=time/interval, k=Math.floor(phase)%6, fraction=phase-Math.floor(phase);
+ const blend=ease(fraction/(transition/interval));
+ const drift=1.08+.025*Math.sin(time*.8)+(mouse.hover?.07:0);
+ layer((k+5)%6,time,1,drift,-cursor.x*16,-cursor.y*10);
+ if(blend>0)layer(k,time,blend,1.18-.10*blend,-cursor.x*12,-cursor.y*8);
+}
 function hit(x,y){ctx.save();ctx.setTransform(1,0,0,1,0,0);const inside=ctx.isPointInPath(path,x,y,'evenodd');ctx.restore();return inside}
 function coords(event){const r=canvas.getBoundingClientRect();return {x:(event.clientX-r.left-cx)/s+400,y:(event.clientY-r.top-cy)/s+150}}
 function entryPoint(p){let best=null,bestScore=-1e9;for(let y=20;y<=275;y+=8)for(let x=110;x<=675;x+=8){if(!hit(x,y))continue;let margin=0;for(let radius=4;radius<=32;radius+=4){let good=true;for(let a=0;a<12;a++){let angle=a*Math.PI/6;if(!hit(x+radius*Math.cos(angle),y+radius*Math.sin(angle))){good=false;break}}if(!good)break;margin=radius}let score=margin*2.5-Math.hypot(x-p.x,y-p.y)*.45;if(score>bestScore){bestScore=score;best={x,y,margin}}}return best||{x:400,y:150,margin:12}}
